@@ -3,54 +3,87 @@ import {
   Conversation,
   Message,
   ProviderRequest,
+  ProviderRequestMessage,
   ProviderResponseChunk,
   TextContent,
+  ToolCallContent,
+  ToolResultContent,
 } from './types';
+import { generateId } from './id';
 
 /**
  * Maps a conversation and agent to a provider request.
- *
- * @param conversation - The current conversation.
- * @param agent - The agent handling the conversation.
- * @returns A provider request object.
  */
 export function conversationToProviderRequest(
   conversation: Conversation,
   agent: Agent
 ): ProviderRequest {
+  const messages = conversation.messages.flatMap((message) => {
+    const textContent = message.content
+      .filter((c) => c.type === 'text')
+      .map((c) => (c as TextContent).text)
+      .join('\n');
+
+    const toolCalls = message.content
+      .filter((c) => c.type === 'tool_call')
+      .map((c) => c as ToolCallContent);
+
+    const toolResults = message.content
+      .filter((c) => c.type === 'tool_result')
+      .map((c) => c as ToolResultContent);
+
+    const providerMessages: ProviderRequestMessage[] = [];
+
+    if (textContent) {
+      providerMessages.push({
+        role: message.role,
+        content: textContent,
+      });
+    }
+
+    if (toolCalls.length > 0) {
+      providerMessages.push({
+        role: 'assistant',
+        content: null,
+        tool_calls: toolCalls.map(tc => ({ id: tc.toolCallId, name: tc.name, arguments: tc.arguments })),
+      });
+    }
+
+    if (toolResults.length > 0) {
+        for (const result of toolResults) {
+            providerMessages.push({
+                role: 'tool',
+                content: JSON.stringify(result.result),
+                tool_call_id: result.toolCallId,
+            });
+        }
+    }
+
+    return providerMessages;
+  });
+
   return {
     model: agent.options.model,
-    messages: conversation.messages.map((message) => {
-      // For now, we only handle simple text content.
-      const textContent = message.content.find(
-        (c) => c.type === 'text'
-      ) as TextContent | undefined;
-      return {
-        role: message.role,
-        content: textContent?.text || '',
-      };
-    }),
+    messages: messages,
+    tools: agent.options.tools, // Pass tool definitions
     temperature: agent.options.temperature,
     maxTokens: agent.options.maxTokens,
-    // Tools will be handled in a later step
   };
 }
 
 /**
  * Maps provider response chunks to an assistant message.
- *
- * @param chunks - An array of provider response chunks.
- * @returns An assistant message.
  */
 export function providerChunksToAssistantMessage(
   chunks: ProviderResponseChunk[]
 ): Message {
   const text = chunks
-    .map((chunk) => (chunk.type === 'text' ? chunk.text : ''))
+    .filter((chunk) => chunk.type === 'text')
+    .map((chunk) => chunk.text || '')
     .join('');
 
   return {
-    id: `asst_${new Date().toISOString()}`, // Simple ID generation for now
+    id: generateId('asst'),
     role: 'assistant',
     createdAt: Date.now(),
     content: [{ type: 'text', text }],

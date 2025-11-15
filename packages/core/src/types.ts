@@ -113,8 +113,10 @@ export interface ProviderCapabilities {
 
 export interface ProviderRequestMessage {
     role: Role;
-    content: string;        // normalized text for provider
-    name?: string;          // for tools/tool results if required by provider
+    content: string | null;
+    name?: string;
+    tool_calls?: { id: string; name: string; arguments: any }[];
+    tool_call_id?: string;
 }
 
 export interface ProviderTool {
@@ -153,4 +155,10 @@ export interface Provider {
     complete(input: ProviderRequest): Promise<ProviderResponseChunk[]>;
 
     stream(input: ProviderRequest): AsyncIterable<ProviderResponseChunk>;
+}
+
+// Atlas
+export interface AtlasOptions {
+    agents?: AgentOptions[];
+    defaultAgentId?: string;
 }
