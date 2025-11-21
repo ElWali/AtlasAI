@@ -21,7 +21,10 @@ class SimpleProviderRegistry implements ProviderRegistry {
 }
 
 const mockProvider = new MockProvider();
-const providerRegistry = new SimpleProviderRegistry([mockProvider]);
+const mockOpenAIProvider = new MockProvider();
+mockOpenAIProvider.id = 'openai';
+
+const providerRegistry = new SimpleProviderRegistry([mockProvider, mockOpenAIProvider]);
 
 const getTimeTool = tool(
   {
@@ -59,7 +62,7 @@ const agentOpts: AgentOptions = {
   tools: [getTimeTool.definition, getDateTool.definition, failingTool.definition],
 };
 
-const atlas = new Atlas({ agents: [agentOpts] }, providerRegistry, [getTimeTool, getDateTool, failingTool]);
+const atlas = new Atlas({ agents: [agentOpts], defaultAgentId: agentOpts.id }, providerRegistry, [getTimeTool, getDateTool, failingTool]);
 
 test('should handle multiple tool calls in one turn', async () => {
     const conversation: Conversation = { id: 'conv-1', messages: [] };
@@ -70,7 +73,7 @@ test('should handle multiple tool calls in one turn', async () => {
         content: [{ type: 'text', text: 'get_current_time_and_date' }],
     };
 
-    const result = await atlas.ask(conversation, userMessage) as any;
+    const result = await atlas.ask(conversation, userMessage, agentOpts.id) as any;
 
     assert.ok(result.assistantMessage.content[0].text.includes('The tool execution was successful'));
     assert.equal(result.intermediateMessages.length, 3);
@@ -88,7 +91,7 @@ test('should handle tool not found', async () => {
         content: [{ type: 'text', text: 'non_existent_tool' }],
     };
 
-    const result = await atlas.ask(conversation, userMessage) as any;
+    const result = await atlas.ask(conversation, userMessage, agentOpts.id) as any;
 
     assert.ok(result.assistantMessage.content[0].text.includes('The tool execution was successful'));
     assert.equal(result.intermediateMessages[1].content[0].status, 'error');
@@ -104,7 +107,7 @@ test('should handle tool handler error', async () => {
         content: [{ type: 'text', text: 'failing_tool' }],
     };
 
-    const result = await atlas.ask(conversation, userMessage) as any;
+    const result = await atlas.ask(conversation, userMessage, agentOpts.id) as any;
     assert.ok(result.assistantMessage.content[0].text.includes('The tool execution was successful'));
     assert.equal(result.intermediateMessages[1].content[0].status, 'error');
     assert.ok(result.intermediateMessages[1].content[0].result.includes('This tool failed'));
@@ -119,7 +122,7 @@ test('should handle streaming with a mock provider that emits a tool call mid-st
         content: [{ type: 'text', text: 'get_current_time' }],
     };
 
-    const stream = await atlas.send(conversation, userMessage) as any;
+    const stream = await atlas.send(conversation, userMessage, agentOpts.id) as any;
     let text = '';
     let toolCallCount = 0;
     for await (const chunk of stream) {

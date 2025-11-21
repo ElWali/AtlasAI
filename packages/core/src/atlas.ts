@@ -1,6 +1,9 @@
-import { Agent, AgentOptions, AtlasOptions, Conversation, Message, Provider, Tool } from './types';
+import { Agent, AtlasOptions, Conversation, Message, Tool } from './types';
 import { AgentRuntime, ProviderRegistry } from './agent-runtime';
 import { agent as createAgent } from './agent';
+import { julesAgent } from './jules-agent';
+import { tool } from './tool';
+import { julesTools } from './jules-agent';
 
 export class Atlas {
   private agents: Map<string, Agent> = new Map();
@@ -10,13 +13,18 @@ export class Atlas {
 
   constructor(options: AtlasOptions, providerRegistry: ProviderRegistry, tools?: Tool[]) {
     this.providerRegistry = providerRegistry;
+
+    // Register Jules agent by default
+    const jules = createAgent(julesAgent);
+    this.registerAgent(jules, julesTools.map(t => tool(t, () => Promise.resolve())));
+
     if (options.agents) {
       for (const agentOpts of options.agents) {
         const agent = createAgent(agentOpts);
         this.registerAgent(agent, tools);
       }
     }
-    this.currentAgentId = options.defaultAgentId || options.agents?.[0]?.id;
+    this.currentAgentId = options.defaultAgentId || jules.id;
   }
 
   registerAgent(agent: Agent, tools?: Tool[]): this {
