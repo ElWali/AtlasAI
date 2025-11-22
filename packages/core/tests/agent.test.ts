@@ -1,9 +1,8 @@
 import { Atlas } from '../src/atlas';
 import { MockProvider } from '../src/mock-provider';
 import { tool } from '../src/tool';
-import { AgentOptions, Conversation, Message } from '../src/types';
+import { AgentOptions, Conversation, Message, Provider } from '../src/types';
 import { ProviderRegistry } from '../src/agent-runtime';
-import { Provider } from '../src/types';
 import assert from 'assert';
 
 class SimpleProviderRegistry implements ProviderRegistry {
@@ -19,7 +18,10 @@ class SimpleProviderRegistry implements ProviderRegistry {
 }
 
 const mockProvider = new MockProvider();
-const providerRegistry = new SimpleProviderRegistry([mockProvider]);
+const mockOpenAIProvider = new MockProvider();
+mockOpenAIProvider.id = 'openai';
+
+const providerRegistry = new SimpleProviderRegistry([mockProvider, mockOpenAIProvider]);
 
 const getTimeTool = tool(
   {
@@ -40,7 +42,7 @@ const agentOpts: AgentOptions = {
   tools: [getTimeTool.definition],
 };
 
-const atlas = new Atlas({ agents: [agentOpts] }, providerRegistry, [getTimeTool]);
+const atlas = new Atlas({ agents: [agentOpts], defaultAgentId: agentOpts.id }, providerRegistry, [getTimeTool]);
 
 async function testNonStreamingToolCall() {
     const conversation: Conversation = {
@@ -54,7 +56,7 @@ async function testNonStreamingToolCall() {
         content: [{ type: 'text', text: 'get_current_time' }],
     };
 
-    const result = await atlas.ask(conversation, userMessage) as any;
+    const result = await atlas.ask(conversation, userMessage, agentOpts.id) as any;
 
     assert(result.assistantMessage.content[0].text.includes('The tool execution was successful'));
 }
@@ -71,7 +73,7 @@ async function testStreaming() {
         content: [{ type: 'text', text: 'Hello' }],
     };
 
-    const stream = await atlas.send(conversation, userMessage) as any;
+    const stream = await atlas.send(conversation, userMessage, agentOpts.id) as any;
     let text = '';
     for await (const chunk of stream) {
         if (chunk.type === 'text') {
