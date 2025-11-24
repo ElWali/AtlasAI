@@ -11,6 +11,11 @@ export { CRS, EPSG3857 } from './geo/CRS.js';
 
 // Geometry
 export * from './geometry/Point.js';
+// Geo
+export { LatLng, toLatLng } from './geo/LatLng.js';
+
+// Geometry
+export { Point, toPoint } from './geometry/Point.js';
 
 // Layer
 export { Layer } from './layer/Layer.js';
@@ -25,6 +30,9 @@ export { Attribution } from './control/Attribution.js';
 
 // UI
 export { Popup } from './ui/Popup.js';
+
+// Control
+export { Control } from './control/Control.js';
 
 // Map
 export { Map } from './map/Map.js';

@@ -3,6 +3,7 @@ import { toLatLng } from '../geo/LatLng.js';
 import { toPoint, subtract, add, divideBy } from '../geometry/Point.js';
 import { EPSG3857 } from '../geo/CRS.js';
 import { DomUtil } from '../dom/DomUtil.js';
+import { toPoint } from '../geometry/Point.js';
 
 /**
  * @class Map
@@ -22,6 +23,11 @@ export class Map extends Evented {
     super();
     this.options = {
       crs: new EPSG3857(),
+   */
+  constructor(id, options) {
+    super();
+    this._container = typeof id === 'string' ? document.getElementById(id) : id;
+    this.options = {
       center: [0, 0],
       zoom: 1,
       ...options,
@@ -106,6 +112,7 @@ export class Map extends Evented {
   layerPointToLatLng(point) {
     const projectedPoint = add(point, this.getPixelOrigin());
     return this._unproject(projectedPoint);
+    return projectedPoint.subtract(this.getPixelOrigin());
   }
 
   /**
@@ -119,6 +126,7 @@ export class Map extends Evented {
     return {
       min: pixelOrigin,
       max: add(pixelOrigin, size),
+      max: pixelOrigin.add(size),
     };
   }
 
@@ -138,6 +146,11 @@ export class Map extends Evented {
    */
   getPixelOrigin() {
     return this._pixelOrigin;
+   * @description Returns the pixel origin of the map view.
+   * @returns {Point} The pixel origin.
+   */
+  getPixelOrigin() {
+    return this._getTopLeftPoint();
   }
 
   /**
@@ -167,6 +180,16 @@ export class Map extends Evented {
       this._popup = null;
       this.off('drag', this.closePopup, this);
     }
+   * @param {string | HTMLElement} content - The popup content.
+   * @param {LatLng} latlng - The geographical point where to open the popup.
+   * @returns {Map} `this`
+   */
+  openPopup(content, latlng) {
+    if (this._popup) {
+      this._popup.remove();
+    }
+    this._popup = this._createPopup(content, latlng);
+    this.getPanes().popupPane.appendChild(this._popup);
     return this;
   }
 
@@ -186,6 +209,18 @@ export class Map extends Evented {
 
   _createPane(className, container) {
     return DomUtil.create('div', className, container || this._mapPane);
+      tilePane: this._createPane('atlas-tile-pane'),
+      overlayPane: this._createPane('atlas-overlay-pane'),
+      markerPane: this._createPane('atlas-marker-pane'),
+      popupPane: this._createPane('atlas-popup-pane'),
+    };
+  }
+
+  _createPane(className) {
+    const pane = document.createElement('div');
+    pane.classList.add(className);
+    this._container.appendChild(pane);
+    return pane;
   }
 
   _initEvents() {
@@ -209,6 +244,9 @@ export class Map extends Evented {
         startPos = currentPos;
         this._move(diff);
         this.fire('drag');
+        const diff = currentPos.subtract(startPos);
+        startPos = currentPos;
+        this._move(diff.multiplyBy(-1));
       }
     });
 
@@ -235,11 +273,47 @@ export class Map extends Evented {
 
   _unproject(point) {
     return this.options.crs.pointToLatLng(point, this._zoom);
+    const newPixelOrigin = this.getPixelOrigin().add(offset);
+    const newCenter = this._unproject(newPixelOrigin.add(this.getSize().divideBy(2)));
+    this.setView(newCenter, this._zoom);
+  }
+
+  _project(latlng) {
+    const d = Math.PI / 180;
+    const sin = Math.sin(latlng.lat * d);
+    const scale = 256 * Math.pow(2, this._zoom);
+
+    const x = (latlng.lng / 360 + 0.5) * scale;
+    const y = (0.5 - 0.25 * Math.log((1 + sin) / (1 - sin)) / Math.PI) * scale;
+
+    return toPoint(x, y);
+  }
+
+  _unproject(point) {
+    const scale = 256 * Math.pow(2, this._zoom);
+    const x = point.x / scale;
+    const y = point.y / scale;
+
+    const lng = (x - 0.5) * 360;
+    const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * y)));
+    const lat = latRad * (180 / Math.PI);
+
+    return toLatLng(lat, lng);
   }
 
   _getTopLeftPoint() {
     const center = this._project(this._center);
     const size = this.getSize();
     return subtract(center, divideBy(size, 2));
+    return center.subtract(size.divideBy(2));
+  }
+
+  _createPopup(content, latlng) {
+    const popup = document.createElement('div');
+    popup.classList.add('atlas-popup');
+    popup.innerHTML = content;
+    const pos = this.latLngToLayerPoint(latlng);
+    popup.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
+    return popup;
   }
 }

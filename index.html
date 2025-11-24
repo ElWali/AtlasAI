@@ -2,6 +2,7 @@
 <html>
 <head>
   <title>Atlas.js Phase 2 Test</title>
+  <title>Atlas.js Test</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
@@ -48,6 +49,10 @@
     ], { color: 'red' });
     polyline.addTo(map);
 
+    new Atlas.TileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    const marker = new Atlas.Marker({ lat: 51.5, lng: -0.09 }).addTo(map);
+    marker.bindPopup('A pretty CSS3 popup.<br> Easily customizable.');
   </script>
 </body>
 </html>

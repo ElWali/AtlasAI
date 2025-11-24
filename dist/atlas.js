@@ -287,6 +287,65 @@ var Atlas = (() => {
       return _EPSG3857.TILE_SIZE * Math.pow(2, zoom) / (2 * Math.PI * _EPSG3857.R);
     }
   };
+  // src/geometry/Point.js
+  var Point = class _Point {
+    /**
+     * @constructor
+     * @param {number} x
+     * @param {number} y
+     */
+    constructor(x, y) {
+      this.x = x;
+      this.y = y;
+    }
+    /**
+     * @method clone
+     * @description Returns a copy of the point.
+     * @returns {Point} A new point with the same coordinates.
+     */
+    clone() {
+      return new _Point(this.x, this.y);
+    }
+    /**
+     * @method add
+     * @description Adds the coordinates of another point to this point.
+     * @param {Point} otherPoint
+     * @returns {Point} A new point with the added coordinates.
+     */
+    add(otherPoint) {
+      return new _Point(this.x + otherPoint.x, this.y + otherPoint.y);
+    }
+    /**
+     * @method subtract
+     * @description Subtracts the coordinates of another point from this point.
+     * @param {Point} otherPoint
+     * @returns {Point} A new point with the subtracted coordinates.
+     */
+    subtract(otherPoint) {
+      return new _Point(this.x - otherPoint.x, this.y - otherPoint.y);
+    }
+    /**
+     * @method multiplyBy
+     * @description Multiplies the coordinates of this point by a number.
+     * @param {number} num
+     * @returns {Point} A new point with the multiplied coordinates.
+     */
+    multiplyBy(num) {
+      return new _Point(this.x * num, this.y * num);
+    }
+    /**
+     * @method divideBy
+     * @description Divides the coordinates of this point by a number.
+     * @param {number} num
+     * @returns {Point} A new point with the divided coordinates.
+     */
+    divideBy(num) {
+      return new _Point(this.x / num, this.y / num);
+    }
+  };
+  function toPoint(x, y) {
+    return new Point(x, y);
+  }
 
   // src/layer/Layer.js
   var Layer = class extends Evented {
@@ -833,6 +892,7 @@ var Atlas = (() => {
     layerPointToLatLng(point) {
       const projectedPoint = add(point, this.getPixelOrigin());
       return this._unproject(projectedPoint);
+      return projectedPoint.subtract(this.getPixelOrigin());
     }
     /**
      * @method getPixelBounds
@@ -845,6 +905,7 @@ var Atlas = (() => {
       return {
         min: pixelOrigin,
         max: add(pixelOrigin, size)
+        max: pixelOrigin.add(size)
       };
     }
     /**
@@ -862,6 +923,11 @@ var Atlas = (() => {
      */
     getPixelOrigin() {
       return this._pixelOrigin;
+     * @description Returns the pixel origin of the map view.
+     * @returns {Point} The pixel origin.
+     */
+    getPixelOrigin() {
+      return this._getTopLeftPoint();
     }
     /**
      * @method openPopup
@@ -889,6 +955,16 @@ var Atlas = (() => {
         this._popup = null;
         this.off("drag", this.closePopup, this);
       }
+     * @param {string | HTMLElement} content - The popup content.
+     * @param {LatLng} latlng - The geographical point where to open the popup.
+     * @returns {Map} `this`
+     */
+    openPopup(content, latlng) {
+      if (this._popup) {
+        this._popup.remove();
+      }
+      this._popup = this._createPopup(content, latlng);
+      this.getPanes().popupPane.appendChild(this._popup);
       return this;
     }
     _initLayout() {
@@ -906,6 +982,20 @@ var Atlas = (() => {
     }
     _createPane(className, container) {
       return DomUtil.create("div", className, container || this._mapPane);
+    }
+    _initPanes() {
+      this._panes = {
+        tilePane: this._createPane("atlas-tile-pane"),
+        overlayPane: this._createPane("atlas-overlay-pane"),
+        markerPane: this._createPane("atlas-marker-pane"),
+        popupPane: this._createPane("atlas-popup-pane")
+      };
+    }
+    _createPane(className) {
+      const pane = document.createElement("div");
+      pane.classList.add(className);
+      this._container.appendChild(pane);
+      return pane;
     }
     _initEvents() {
       let dragging = false;
@@ -925,6 +1015,9 @@ var Atlas = (() => {
           startPos = currentPos;
           this._move(diff);
           this.fire("drag");
+          const diff = currentPos.subtract(startPos);
+          startPos = currentPos;
+          this._move(diff.multiplyBy(-1));
         }
       });
       this._container.addEventListener("wheel", (e) => {
@@ -946,11 +1039,40 @@ var Atlas = (() => {
     }
     _unproject(point) {
       return this.options.crs.pointToLatLng(point, this._zoom);
+      const newPixelOrigin = this.getPixelOrigin().add(offset);
+      const newCenter = this._unproject(newPixelOrigin.add(this.getSize().divideBy(2)));
+      this.setView(newCenter, this._zoom);
+    }
+    _project(latlng) {
+      const d = Math.PI / 180;
+      const sin = Math.sin(latlng.lat * d);
+      const scale = 256 * Math.pow(2, this._zoom);
+      const x = (latlng.lng / 360 + 0.5) * scale;
+      const y = (0.5 - 0.25 * Math.log((1 + sin) / (1 - sin)) / Math.PI) * scale;
+      return toPoint(x, y);
+    }
+    _unproject(point) {
+      const scale = 256 * Math.pow(2, this._zoom);
+      const x = point.x / scale;
+      const y = point.y / scale;
+      const lng = (x - 0.5) * 360;
+      const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * y)));
+      const lat = latRad * (180 / Math.PI);
+      return toLatLng(lat, lng);
     }
     _getTopLeftPoint() {
       const center = this._project(this._center);
       const size = this.getSize();
       return subtract(center, divideBy(size, 2));
+      return center.subtract(size.divideBy(2));
+    }
+    _createPopup(content, latlng) {
+      const popup = document.createElement("div");
+      popup.classList.add("atlas-popup");
+      popup.innerHTML = content;
+      const pos = this.latLngToLayerPoint(latlng);
+      popup.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
+      return popup;
     }
   };
   return __toCommonJS(Atlas_exports);
